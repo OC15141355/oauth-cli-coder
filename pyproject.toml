@@ -1,0 +1,22 @@
+[project]
+name = "oauth-cli-coder"
+version = "0.1.0"
+description = "Drive AI CLI tools (Claude Code, Gemini CLI, Codex) via tmux sessions using existing OAuth tokens"
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.10"
+dependencies = [
+    "click>=8.1.0",
+]
+
+[project.scripts]
+oauth-coder = "oauth_cli_coder.cli:cli"
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0.0",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
