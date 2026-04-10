@@ -42,13 +42,14 @@ def create_session(session: str, command: str, cwd: str | None = None,
     child process doesn't know it's inside tmux. This prevents CLI tools
     from adjusting their output format.
     """
-    # Geometry matches typical Terminal.app default (80x24) so Claude's TUI
-    # doesn't get cropped when attached from a standard-sized window.
-    # tmux uses the smallest attached client size, so creating larger and
-    # attaching smaller causes clipping.
-    cmd = ["tmux", "new-session", "-d", "-s", session, "-x", "200", "-y", "50"]
-    # Force the session to keep its own size independent of attached clients.
-    post_create = ["tmux", "set-option", "-t", session, "window-size", "manual"]
+    # Sensible initial geometry for the headless phase before any client
+    # attaches. Claude's TUI will reflow when a client attaches and the
+    # window-size=latest option (set below) adopts the client's size.
+    cmd = ["tmux", "new-session", "-d", "-s", session, "-x", "120", "-y", "40"]
+    # window-size=latest: whenever a client attaches, the session resizes to
+    # that client's dimensions. Fixes the "can't see content" issue caused by
+    # creating a large session and attaching from a smaller Terminal window.
+    post_create = ["tmux", "set-option", "-t", session, "window-size", "latest"]
     if cwd:
         cmd.extend(["-c", cwd])
 
