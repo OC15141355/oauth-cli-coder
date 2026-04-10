@@ -25,7 +25,7 @@ _CHROME = ("\u2500\u2500", "\u2580\u2580", "\u2584\u2584",
 
 class ClaudeProvider(Provider):
     name = "claude"
-    command = "claude"
+    command = "claude --dangerously-skip-permissions"
     idle_marker = _IDLE
     busy_markers = _BUSY
     startup_time = 10.0  # Claude Code takes a moment to initialize

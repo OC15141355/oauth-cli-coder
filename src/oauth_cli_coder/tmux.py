@@ -42,7 +42,13 @@ def create_session(session: str, command: str, cwd: str | None = None,
     child process doesn't know it's inside tmux. This prevents CLI tools
     from adjusting their output format.
     """
+    # Geometry matches typical Terminal.app default (80x24) so Claude's TUI
+    # doesn't get cropped when attached from a standard-sized window.
+    # tmux uses the smallest attached client size, so creating larger and
+    # attaching smaller causes clipping.
     cmd = ["tmux", "new-session", "-d", "-s", session, "-x", "200", "-y", "50"]
+    # Force the session to keep its own size independent of attached clients.
+    post_create = ["tmux", "set-option", "-t", session, "window-size", "manual"]
     if cwd:
         cmd.extend(["-c", cwd])
 
@@ -60,6 +66,9 @@ def create_session(session: str, command: str, cwd: str | None = None,
         cmd.append(command)
 
     subprocess.run(cmd, capture_output=True, text=True)
+    # Pin the session geometry so attached clients (e.g. 80x24 Terminal.app)
+    # don't shrink the pane and crop Claude's TUI.
+    subprocess.run(post_create, capture_output=True, text=True)
     # Give the process a moment to start
     time.sleep(1.0)
 
@@ -93,12 +102,15 @@ def capture_pane(session: str, full_history: bool = False) -> str:
 
 def paste_text(session: str, text: str) -> None:
     """Paste text into a tmux session via buffer (avoids shell escaping issues)."""
+    # Use a per-session buffer name to avoid races when multiple sessions
+    # are driven concurrently (shared "occ-buf" caused prompt clobbering).
+    buf_name = f"occ-{session}"
     fd, tmp = tempfile.mkstemp(prefix="occ-", suffix=".txt")
     try:
         with os.fdopen(fd, "w") as f:
             f.write(text)
-        run(["tmux", "load-buffer", "-b", "occ-buf", tmp])
-        run(["tmux", "paste-buffer", "-b", "occ-buf", "-p", "-t", session])
+        run(["tmux", "load-buffer", "-b", buf_name, tmp])
+        run(["tmux", "paste-buffer", "-b", buf_name, "-p", "-t", session])
     finally:
         try:
             os.remove(tmp)
