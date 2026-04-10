@@ -42,18 +42,24 @@ def create_session(session: str, command: str, cwd: str | None = None,
     child process doesn't know it's inside tmux. This prevents CLI tools
     from adjusting their output format.
     """
-    # Create at Terminal.app's default 80x24 geometry. TUI applications like
-    # Claude Code draw horizontal rules and frames sized to the initial
-    # terminal width — if we create wider than the client, those graphics
-    # wrap badly on attach even if the pane resizes later, because
-    # `window-size=latest` only fires SIGWINCH; it doesn't force a clean
-    # redraw of cached frame buffers. Matching the default client size from
-    # the start sidesteps the whole problem. Users with wider terminals will
-    # see the TUI reflow normally via SIGWINCH when they attach.
+    # Pin the session to 80x24 (Terminal.app default) via THREE mechanisms
+    # because tmux 3.6+ has multiple overlapping size controls:
+    #   1. `-x 80 -y 24` on new-session sets the initial geometry.
+    #   2. `default-size 80x24` overrides tmux's default (200x50 on 3.6+)
+    #      and is what the session falls back to when no clients attached.
+    #   3. `window-size manual` disables auto-resize when clients come/go.
+    # TUI applications like Claude Code draw horizontal rules and frame
+    # buffers sized to the current terminal width; if tmux ever resizes the
+    # pane, those cached graphics wrap badly. All three controls combined
+    # keep the session nailed to 80x24 regardless of what clients attach.
+    # Users with wider Terminal windows will see 80-wide content that
+    # doesn't use the whole screen — that's fine, it's consistent and
+    # readable, and it matches the worker-terminal constraint.
     cmd = ["tmux", "new-session", "-d", "-s", session, "-x", "80", "-y", "24"]
-    # Still set window-size=latest for the rare case of multiple attached
-    # clients with different sizes — the most-recently-attached client wins.
-    post_create = ["tmux", "set-option", "-t", session, "window-size", "latest"]
+    post_create_cmds = [
+        ["tmux", "set-option", "-t", session, "default-size", "80x24"],
+        ["tmux", "set-option", "-t", session, "window-size", "manual"],
+    ]
     if cwd:
         cmd.extend(["-c", cwd])
 
@@ -71,9 +77,18 @@ def create_session(session: str, command: str, cwd: str | None = None,
         cmd.append(command)
 
     subprocess.run(cmd, capture_output=True, text=True)
-    # Pin the session geometry so attached clients (e.g. 80x24 Terminal.app)
-    # don't shrink the pane and crop Claude's TUI.
-    subprocess.run(post_create, capture_output=True, text=True)
+    # Pin the session geometry so Claude's TUI doesn't get resized out of
+    # whatever shape it rendered at on startup. See create_session comments.
+    for pc in post_create_cmds:
+        subprocess.run(pc, capture_output=True, text=True)
+    # Force the session to the pinned geometry explicitly — on some tmux
+    # versions the initial -x/-y is honored by new-session but overridden
+    # by default-size on first auto-resize. `resize-window` is the big
+    # hammer: it sets the window to exactly these dimensions now.
+    subprocess.run(
+        ["tmux", "resize-window", "-t", session, "-x", "80", "-y", "24"],
+        capture_output=True, text=True,
+    )
     # Give the process a moment to start
     time.sleep(1.0)
 
